@@ -1,4 +1,4 @@
-const { SYSTEM_PROMPT } = require("../lib/prompt");
+const { FIELD_PROMPTS } = require("../../lib/field-prompts");
 const {
   CORS_HEADERS,
   applyCors,
@@ -7,7 +7,9 @@ const {
   clamp,
   ensureString,
   slugify,
-} = require("../lib/claude");
+} = require("../../lib/claude");
+
+const VALID_FIELDS = Object.keys(FIELD_PROMPTS);
 
 module.exports = async function handler(req, res) {
   // CORS preflight
@@ -24,6 +26,16 @@ module.exports = async function handler(req, res) {
     return;
   }
 
+  const { field } = req.query;
+
+  if (!VALID_FIELDS.includes(field)) {
+    res.status(404).json({
+      error: `Unknown field "${field}"`,
+      valid_fields: VALID_FIELDS,
+    });
+    return;
+  }
+
   const body = req.body || {};
   const { name } = body;
 
@@ -32,28 +44,19 @@ module.exports = async function handler(req, res) {
     return;
   }
 
+  const { system, maxTokens, enforce } = FIELD_PROMPTS[field];
+
   try {
     const userMessage = buildUserMessage(body);
-    let data = await callClaude(SYSTEM_PROMPT, userMessage, 2048);
-
-    // Server-side limit enforcement
-    data.meta_title = clamp(data.meta_title, 60);
-    data.meta_title_ar = clamp(data.meta_title_ar, 60);
-    data.meta_description = clamp(data.meta_description, 160);
-    data.meta_description_ar = clamp(data.meta_description_ar, 160);
-    data.alt = clamp(data.alt, 125);
-    data.alt_ar = clamp(data.alt_ar, 125);
-    data.slug = slugify(data.slug || name);
-    data.keywords = ensureString(data.keywords);
-    data.keywords_ar = ensureString(data.keywords_ar);
-
+    let data = await callClaude(system, userMessage, maxTokens);
+    data = enforce(data, body, { clamp, ensureString, slugify });
     res.status(200).json(data);
   } catch (err) {
     if (err instanceof SyntaxError) {
       res.status(502).json({ error: "Model returned invalid JSON" });
       return;
     }
-    console.error("generate error:", err);
+    console.error(`generate/${field} error:`, err);
     res.status(500).json({ error: "Internal server error" });
   }
 };
