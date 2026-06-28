@@ -1,0 +1,12 @@
+{
+  "name": "product-content-api",
+  "version": "1.0.0",
+  "description": "Serverless Vercel API — bilingual SEO content generation via Claude",
+  "main": "api/generate.js",
+  "scripts": {
+    "dev": "vercel dev"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.30.0"
+  }
+}
