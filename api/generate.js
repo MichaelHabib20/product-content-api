@@ -1,4 +1,5 @@
-const { SYSTEM_PROMPT } = require("../lib/prompt");
+const { buildSystemPrompt } = require("../lib/prompt");
+const { getCategoryRules } = require("../lib/categories");
 const {
   CORS_HEADERS,
   applyCors,
@@ -10,7 +11,6 @@ const {
 } = require("../lib/claude");
 
 module.exports = async function handler(req, res) {
-  // CORS preflight
   if (req.method === "OPTIONS") {
     res.writeHead(200, CORS_HEADERS);
     res.end();
@@ -25,18 +25,21 @@ module.exports = async function handler(req, res) {
   }
 
   const body = req.body || {};
-  const { name } = body;
+  const { name, category = null, subcategory = null } = body;
 
   if (!name || !name.trim()) {
     res.status(400).json({ error: "name is required" });
     return;
   }
 
+  // Step 1: pick category-aware system prompt
+  const categoryRules = getCategoryRules(category, subcategory);
+  const systemPrompt = buildSystemPrompt(categoryRules);
+
   try {
     const userMessage = buildUserMessage(body);
-    let data = await callClaude(SYSTEM_PROMPT, userMessage, 2048);
+    let data = await callClaude(systemPrompt, userMessage, 2048);
 
-    // Server-side limit enforcement
     data.meta_title = clamp(data.meta_title, 60);
     data.meta_title_ar = clamp(data.meta_title_ar, 60);
     data.meta_description = clamp(data.meta_description, 160);
@@ -46,6 +49,9 @@ module.exports = async function handler(req, res) {
     data.slug = slugify(data.slug || name);
     data.keywords = ensureString(data.keywords);
     data.keywords_ar = ensureString(data.keywords_ar);
+
+    // Return detected category key so the caller knows which rules were applied
+    data._category = categoryRules.key;
 
     res.status(200).json(data);
   } catch (err) {

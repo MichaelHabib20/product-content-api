@@ -1,4 +1,5 @@
 const { FIELD_PROMPTS } = require("../../lib/field-prompts");
+const { getCategoryRules } = require("../../lib/categories");
 const {
   CORS_HEADERS,
   applyCors,
@@ -12,7 +13,6 @@ const {
 const VALID_FIELDS = Object.keys(FIELD_PROMPTS);
 
 module.exports = async function handler(req, res) {
-  // CORS preflight
   if (req.method === "OPTIONS") {
     res.writeHead(200, CORS_HEADERS);
     res.end();
@@ -37,19 +37,25 @@ module.exports = async function handler(req, res) {
   }
 
   const body = req.body || {};
-  const { name } = body;
+  const { name, category = null, subcategory = null } = body;
 
   if (!name || !name.trim()) {
     res.status(400).json({ error: "name is required" });
     return;
   }
 
+  // Step 1: inject category tone + compliance rules into field prompt
+  const categoryRules = getCategoryRules(category, subcategory);
+  const categoryBlock = `CATEGORY TONE: Write in a ${categoryRules.tone}\nCATEGORY COMPLIANCE:\n${categoryRules.rules.map((r) => `- ${r}`).join("\n")}`;
+
   const { system, maxTokens, enforce } = FIELD_PROMPTS[field];
+  const systemWithCategory = `${system}\n\n${categoryBlock}`;
 
   try {
     const userMessage = buildUserMessage(body);
-    let data = await callClaude(system, userMessage, maxTokens);
+    let data = await callClaude(systemWithCategory, userMessage, maxTokens);
     data = enforce(data, body, { clamp, ensureString, slugify });
+    data._category = categoryRules.key;
     res.status(200).json(data);
   } catch (err) {
     if (err instanceof SyntaxError) {
